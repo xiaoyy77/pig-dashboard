@@ -101,9 +101,40 @@ table.sub td,table.sub th{padding:5px 13px}
   th,td{padding:6px 8px}
   .big{font-size:16px}
 }
+
+/* ---------- 锁屏 ---------- */
+#lock{display:none;position:fixed;inset:0;z-index:200;background:var(--bg);align-items:center;justify-content:center}
+body.locked #lock{display:flex}
+body.locked > header, body.locked > main, body.locked > footer{display:none}
+.lockcard{background:var(--surface);border:1px solid var(--border-strong);border-radius:4px;padding:26px 28px 22px;width:350px;max-width:92vw;box-shadow:0 2px 10px rgba(0,0,0,.07)}
+.lockcard h2{margin:0 0 5px;font-size:16px;font-weight:650}
+.lockcard p{margin:0 0 18px;font-size:12.5px;color:var(--muted);line-height:1.6}
+.lockcard input[type=password]{width:100%;padding:9px 11px;border:1px solid var(--border-strong);border-radius:3px;
+  font-family:var(--mono);font-size:14px;letter-spacing:.02em}
+.lockcard input[type=password]:focus{outline:2px solid var(--ink);outline-offset:-1px;border-color:var(--ink)}
+.lockrow{display:flex;align-items:center;gap:7px;margin:12px 0 15px;font-size:12px;color:var(--ink2)}
+.lockrow input{margin:0}
+.lockcard button{width:100%;padding:10px;border:0;border-radius:3px;background:var(--ink);color:#fff;
+  font-family:inherit;font-size:13.5px;cursor:pointer;min-height:40px}
+.lockcard button:hover{background:#000}
+.lockcard button:disabled{opacity:.55;cursor:default}
+.lockerr{color:var(--up);font-size:12px;margin-top:9px;min-height:15px}
+.locktip{margin-top:14px;padding-top:12px;border-top:1px solid var(--border);font-size:11px;color:var(--muted);line-height:1.7}
 </style>
 </head>
-<body>
+<body class="locked">
+
+<div id="lock">
+  <div class="lockcard">
+    <h2>生猪出栏跟踪</h2>
+    <p>牧原 · 温氏 · 德康　该页面已加密保护，请输入访问密码</p>
+    <input id="pw" type="password" placeholder="访问密码" autocomplete="current-password" spellcheck="false">
+    <div class="lockrow"><input type="checkbox" id="remember" checked><label for="remember">在本机记住密码（下次免输）</label></div>
+    <button id="unlockBtn">打开</button>
+    <div class="lockerr" id="lockErr"></div>
+    <div class="locktip">数据以 AES-256 加密存放在网页里，没有密码无法读取。</div>
+  </div>
+</div>
 
 <header class="topbar">
   <div class="topbar-in">
@@ -197,7 +228,67 @@ table.sub td,table.sub th{padding:5px 13px}
 <script>
 (function(){
 "use strict";
-const D = window.PIG_DATA;
+
+/* ========== 访问控制：data.js 里只有密文，凭密码本地解密 ========== */
+const KEY_STORE = "pig_panel_key_v1";
+const $id = id => document.getElementById(id);
+function b64d(s){ const bin = atob(s); const u = new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) u[i] = bin.charCodeAt(i); return u; }
+function b64e(buf){ const u = new Uint8Array(buf); let s = ""; for(let i=0;i<u.length;i++) s += String.fromCharCode(u[i]); return btoa(s); }
+async function deriveKey(pw, salt, iter){
+  const km = await crypto.subtle.importKey("raw", new TextEncoder().encode(pw), "PBKDF2", false, ["deriveKey"]);
+  return crypto.subtle.deriveKey({name:"PBKDF2", salt, iterations:iter, hash:"SHA-256"},
+    km, {name:"AES-GCM", length:256}, true, ["decrypt"]);
+}
+async function decryptWithKey(key, enc){
+  try{
+    const pt = await crypto.subtle.decrypt({name:"AES-GCM", iv:b64d(enc.iv)}, key, b64d(enc.ct));
+    return JSON.parse(new TextDecoder().decode(pt));
+  }catch(e){ return null; }
+}
+async function autoUnlock(enc){
+  try{
+    const saved = JSON.parse(localStorage.getItem(KEY_STORE) || "null");
+    if(!saved || saved.f !== enc.f) return null;
+    const key = await crypto.subtle.importKey("raw", b64d(saved.k), "AES-GCM", false, ["decrypt"]);
+    return await decryptWithKey(key, enc);
+  }catch(e){ return null; }
+}
+function rememberKey(key){
+  try{
+    crypto.subtle.exportKey("raw", key).then(raw => {
+      localStorage.setItem(KEY_STORE, JSON.stringify({k:b64e(raw), f:window.PIG_ENC.f}));
+    }).catch(()=>{});
+  }catch(e){}
+}
+function showLock(enc){
+  document.body.classList.add("locked");
+  const pw = $id("pw"), btn = $id("unlockBtn"), err = $id("lockErr");
+  setTimeout(()=>pw.focus(), 50);
+  async function attempt(){
+    const v = pw.value;
+    if(!v){ err.textContent = "请输入密码"; return; }
+    btn.disabled = true; btn.textContent = "验证中…"; err.textContent = "";
+    const key = await deriveKey(v, b64d(enc.salt), enc.iter);
+    const data = await decryptWithKey(key, enc);
+    if(!data){
+      btn.disabled = false; btn.textContent = "打开";
+      err.textContent = "密码不对，请重新输入";
+      pw.select();
+      return;
+    }
+    if($id("remember").checked) rememberKey(key);
+    unlock(data);
+  }
+  btn.addEventListener("click", attempt);
+  pw.addEventListener("keydown", e => { if(e.key === "Enter") attempt(); });
+}
+function unlock(data){
+  document.body.classList.remove("locked");
+  $id("lock").style.display = "none";
+  start(data);
+}
+
+function start(D){
 const CO = D.companies, IDS = CO.map(c=>c.id), CMAP = {}; CO.forEach(c=>CMAP[c.id]=c);
 const ROWS = D.daily.slice().sort((a,b)=> a.date < b.date ? -1 : 1);
 const IDX = {}; ROWS.forEach((r,i)=> IDX[r.date]=i);
@@ -636,6 +727,21 @@ wire("splitSeg","split","c"); wire("basisSeg","basis","b");
 renderAll();
 let rz; window.addEventListener("resize", ()=>{ clearTimeout(rz); rz=setTimeout(renderChart,120); });
 window.__ready = true;
+}
+
+/* 启动：有明文数据直接用（本地开发/测试），否则走解密流程 */
+(async function boot(){
+  if(window.PIG_DATA){ start(window.PIG_DATA); return; }
+  const enc = window.PIG_ENC;
+  if(!enc){
+    document.body.classList.remove("locked");
+    $id("lock").innerHTML = '<div class="lockcard"><h2>数据文件缺失</h2><p>请联系维护人重新发布。</p></div>';
+    return;
+  }
+  const data = await autoUnlock(enc);
+  if(data){ unlock(data); return; }
+  showLock(enc);
+})();
 })();
 </script>
 </body>

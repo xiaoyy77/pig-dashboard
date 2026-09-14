@@ -1,3 +1,6 @@
 _tools/
 _dump.html
 *.png
+_tools/
+.secret
+*.pw
