@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>生猪 · 牧原 / 温氏 / 德康 日度数据面板</title>
+<style>
+:root{
+  --bg:#f1f2f4; --surface:#fff; --ink:#14161a; --ink2:#3f444c; --muted:#7d838d;
+  --border:#e3e5e9; --border-strong:#c8ccd3; --hover:#f7f8fa;
+  --up:#c0392b; --down:#1e8449; --flat:#8b9099;
+  --sans:"Microsoft YaHei UI","Microsoft YaHei","PingFang SC",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --mono:"Cascadia Mono",Consolas,"SFMono-Regular",ui-monospace,monospace;
+  --r:3px;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font-family:var(--sans);font-size:13px;line-height:1.5;-webkit-font-smoothing:antialiased}
+.num{font-family:var(--mono);font-variant-numeric:tabular-nums;font-feature-settings:"tnum" 1}
+.up{color:var(--up)} .down{color:var(--down)} .flat{color:var(--flat)}
+
+/* ---------- 顶栏 ---------- */
+.topbar{position:sticky;top:0;z-index:30;background:var(--surface);border-bottom:1px solid var(--border-strong)}
+.topbar-in{max-width:1480px;margin:0 auto;padding:10px 20px;display:flex;align-items:center;gap:18px;flex-wrap:wrap}
+.brand{display:flex;align-items:baseline;gap:10px;margin-right:auto}
+.brand h1{margin:0;font-size:15px;font-weight:650;letter-spacing:.01em}
+.brand .sub{font-size:12px;color:var(--muted)}
+.stamp{font-size:12px;color:var(--ink2);white-space:nowrap}
+.stamp b{font-weight:600}
+.seg{display:inline-flex;border:1px solid var(--border-strong);border-radius:var(--r);overflow:hidden}
+.seg button{appearance:none;border:0;background:var(--surface);color:var(--ink2);font-family:inherit;font-size:12px;
+  padding:5px 11px;cursor:pointer;border-right:1px solid var(--border);min-height:28px}
+.seg button:last-child{border-right:0}
+.seg button:hover{background:var(--hover)}
+.seg button[aria-pressed="true"]{background:var(--ink);color:#fff}
+.demo{font-size:12px;padding:3px 8px;border:1px solid #d9b28a;background:#fdf6ec;color:#8a5a1c;border-radius:var(--r);white-space:nowrap}
+
+/* ---------- 布局 ---------- */
+main{max-width:1480px;margin:0 auto;padding:16px 20px 60px}
+.panel{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);margin-bottom:14px}
+.panel-h{display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding:11px 16px;border-bottom:1px solid var(--border)}
+.panel-h h2{margin:0;font-size:13.5px;font-weight:650}
+.panel-h .hint{font-size:12px;color:var(--muted);margin-right:auto}
+.panel-h .hint:last-child{margin-right:0}
+.panel-b{padding:0}
+
+/* ---------- 通用表 ---------- */
+table{width:100%;border-collapse:collapse}
+th,td{padding:7px 14px;border-bottom:1px solid var(--border);text-align:right;white-space:nowrap}
+th:first-child,td:first-child{text-align:left}
+tbody tr:last-child td{border-bottom:0}
+thead th{background:var(--surface);font-weight:600;color:var(--ink2);font-size:12px}
+.cmp thead th{position:sticky;top:0;z-index:2;border-bottom:1px solid var(--border-strong)}
+.cmp tbody tr:hover{background:var(--hover)}
+.cmp .metric{color:var(--ink2);font-size:12.5px}
+.cmp .metric small{display:block;color:var(--muted);font-weight:400;font-size:11px}
+.big{font-size:19px;font-weight:600;letter-spacing:-.01em}
+.chg{font-size:11.5px;margin-top:1px}
+.chg .lbl{color:var(--muted);margin-right:3px}
+.co-dot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:7px;vertical-align:1px}
+td.co-head,th.co-head{text-align:right;font-weight:600}
+.muted{color:var(--muted)}
+.scroll{overflow:auto}
+.scroll.tall{max-height:520px}
+.scroll.tall thead th{position:sticky;top:0;z-index:2}
+.warn{background:#fdf6ec;border:1px solid #e6cdae;color:#8a5a1c;padding:9px 14px;border-radius:var(--r);font-size:12.5px;margin-bottom:14px}
+
+/* ---------- 图表 ---------- */
+.chart-head{display:flex;align-items:center;gap:16px;flex-wrap:wrap;padding:11px 16px;border-bottom:1px solid var(--border)}
+.legend{display:flex;gap:14px;margin-left:auto;font-size:12px;color:var(--ink2)}
+.legend span{display:inline-flex;align-items:center}
+.legend i{width:14px;height:2px;display:inline-block;margin-right:6px}
+#chartWrap{position:relative;padding:8px 8px 4px}
+#chart{display:block;width:100%;height:auto}
+.tip{position:absolute;pointer-events:none;background:rgba(20,22,26,.94);color:#fff;border-radius:var(--r);
+  padding:8px 10px;font-size:12px;line-height:1.65;display:none;z-index:5;white-space:nowrap}
+.tip .t-date{font-weight:600;margin-bottom:3px}
+.tip .t-row{display:flex;gap:10px;justify-content:space-between}
+.tip .t-row i{width:7px;height:7px;border-radius:50%;display:inline-block;margin-right:5px}
+.tip .t-row b{font-family:var(--mono);font-weight:600}
+.axis{fill:var(--muted);font-size:11px;font-family:var(--mono)}
+.grid{stroke:#eceef1;stroke-width:1}
+.grid.base{stroke:var(--border-strong)}
+.tick-line{stroke:var(--border-strong);stroke-width:1;stroke-dasharray:3 3}
+
+footer{max-width:1480px;margin:0 auto;padding:0 20px 30px;color:var(--muted);font-size:11.5px;line-height:1.8}
+@media(max-width:760px){
+  .topbar-in{padding:10px 12px;gap:10px}
+  main{padding:12px 12px 40px}
+  th,td{padding:6px 9px}
+  .big{font-size:16px}
+}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-in">
+    <div class="brand">
+      <h1>生猪日度数据面板</h1>
+      <span class="sub">牧原 · 温氏 · 德康</span>
+    </div>
+    <span class="stamp">更新至 <b id="stamp">—</b></span>
+    <span class="demo" id="demoTag" hidden>示例数据</span>
+    <div class="seg" id="rangeSeg">
+      <button data-n="30">近30天</button>
+      <button data-n="60">近60天</button>
+      <button data-n="0">全部</button>
+    </div>
+  </div>
+</header>
+
+<main>
+  <div class="warn" id="demoWarn" hidden>当前为示例数据，仅用于验证页面结构。发送真实数据后会自动替换。</div>
+
+  <!-- 当日快照 -->
+  <section class="panel">
+    <div class="panel-h">
+      <h2>当日快照</h2>
+      <span class="hint" id="snapDate"></span>
+    </div>
+    <div class="panel-b scroll">
+      <table class="cmp" id="snapTable"></table>
+    </div>
+  </section>
+
+  <!-- 累计数据 -->
+  <section class="panel">
+    <div class="panel-h">
+      <h2>累计数据</h2>
+      <span class="hint">月累计为自然月合计，均价按出栏量加权；环比为「较上月同期」</span>
+    </div>
+    <div class="panel-b scroll">
+      <table class="cmp" id="cumTable"></table>
+    </div>
+  </section>
+
+  <!-- 走势 -->
+  <section class="panel">
+    <div class="chart-head">
+      <div class="seg" id="metricSeg">
+        <button data-m="price">成交均价</button>
+        <button data-m="volume">出栏量</button>
+        <button data-m="weight">出栏均重</button>
+      </div>
+      <span class="hint muted" id="chartUnit"></span>
+      <div class="legend" id="legend"></div>
+    </div>
+    <div id="chartWrap"><svg id="chart" viewBox="0 0 1240 330" preserveAspectRatio="xMidYMid meet"></svg><div class="tip" id="tip"></div></div>
+  </section>
+
+  <!-- 明细 -->
+  <section class="panel">
+    <div class="panel-h">
+      <h2>日度明细</h2>
+      <div class="seg" id="detailSeg">
+        <button data-m="price">成交均价</button>
+        <button data-m="volume">出栏量</button>
+        <button data-m="weight">出栏均重</button>
+      </div>
+      <div class="seg" id="basisSeg">
+        <button data-b="dod">日环比</button>
+        <button data-b="wow">周环比</button>
+      </div>
+    </div>
+    <div class="panel-b scroll tall">
+      <table class="cmp" id="detailTable"></table>
+    </div>
+  </section>
+</main>
+
+<footer>
+  数据来源：<span id="srcLabel">—</span> ｜ 页面由 Hermes Agent 维护，收到新数据后自动更新。
+</footer>
+
+<script src="data.js"></script>
+<script>
+(function(){
+"use strict";
+const D = window.PIG_DATA;
+const CO = D.companies, IDS = CO.map(c=>c.id), CMAP = {}; CO.forEach(c=>CMAP[c.id]=c);
+const ROWS = D.daily.slice().sort((a,b)=> a.date < b.date ? -1 : 1);
+const UNIT = (D.meta && D.meta.units) || {price:"元/公斤", weight:"公斤/头", volume:"头"};
+const METRIC = {
+  price:  {label:"成交均价", unit:UNIT.price,  dp:2, scale:1,     fmt:v=>fmt(v,2)},
+  volume: {label:"出栏量",   unit:"万头",       dp:1, scale:10000, fmt:v=>fmt(v/10000,1)},
+  weight: {label:"出栏均重", unit:UNIT.weight, dp:1, scale:1,     fmt:v=>fmt(v,1)}
+};
+const state = {range:30, metric:"price", detail:"price", basis:"dod"};
+
+/* ---------- helpers ---------- */
+const DAY = 86400000;
+function ts(s){ const p=s.split("-"); return Date.UTC(+p[0], +p[1]-1, +p[2]); }
+function shift(s, days){ return new Date(ts(s)+days*DAY).toISOString().slice(0,10); }
+function fmt(v, dp){ return (v===null||v===undefined||isNaN(v)) ? "—" : Number(v).toFixed(dp); }
+function get(row, id, k){ const o=row && row[id]; if(!o) return null; const v=o[k]; return (v===null||v===undefined||isNaN(v))?null:+v; }
+function delta(cur, base){ return (cur===null||base===null||!base) ? null : (cur-base)/base; }
+function cls(d){ return d===null ? "flat" : (d>0 ? "up" : (d<0 ? "down" : "flat")); }
+function arrow(d){ return d===null ? "" : (d>0 ? "▲" : (d<0 ? "▼" : "＝")); }
+function chgText(a, b, dp, sc){
+  sc = sc || 1;
+  if(a===null||b===null||b===undefined||b===0) return '<span class="flat">—</span>';
+  const diff=a-b, p=diff/b;
+  return '<span class="'+cls(diff)+'">'+arrow(diff)+fmt(Math.abs(diff)/sc,dp)+'　'+fmt(Math.abs(p)*100,2)+'%</span>';
+}
+function monthOf(s){ return s.slice(0,7); }
+function ymShift(ym, n){ let [y,m]=ym.split("-").map(Number); m+=n; while(m<1){m+=12;y--;} while(m>12){m-=12;y++;} return y+"-"+String(m).padStart(2,"0"); }
+
+/* 第 i 行对应的“上周同期”行下标 */
+function weekAgoIdx(i){
+  const target = ts(ROWS[i].date) - 7*DAY;
+  let best = -1;
+  for(let j=i-1;j>=0;j--){ if(ts(ROWS[j].date) <= target) { best=j; break; } }
+  return best;
+}
+
+/* 区间聚合：加权均价 + 出栏量合计 */
+function agg(rows, id){
+  let pv=0, vv=0, vsum=0, psum=0, n=0;
+  rows.forEach(r=>{
+    const v=get(r,id,"volume"), p=get(r,id,"price");
+    if(v!==null && p!==null){ pv+=p*v; vv+=v; n++; }
+    if(v!==null) vsum+=v;
+    if(p!==null) psum+=p;
+  });
+  return {price: vv>0 ? pv/vv : (n? psum/n : null), volume: vsum||null, weight:null, n};
+}
+
+/* ---------- 渲染：当日快照 ---------- */
+function renderSnap(){
+  const last = ROWS[ROWS.length-1], prev = ROWS[ROWS.length-2];
+  const wi = weekAgoIdx(ROWS.length-1);
+  const wk = wi>=0 ? ROWS[wi] : null;
+  document.getElementById("snapDate").textContent = "数据日期 " + last.date + (wi>=0 ? "　周同期 " + ROWS[wi].date : "");
+
+  let h = "<thead><tr><th>指标</th>";
+  CO.forEach(c=> h += '<th class="co-head"><span class="co-dot" style="background:'+c.color+'"></span>'+c.name+"</th>");
+  h += "</tr></thead><tbody>";
+
+  const specs = [
+    {k:"price",  title:"成交均价", unit:UNIT.price,  dp:2, sc:1},
+    {k:"weight", title:"出栏均重", unit:UNIT.weight, dp:1, sc:1},
+    {k:"volume", title:"出栏量",   unit:"万头",       dp:1, sc:10000}
+  ];
+  specs.forEach(s=>{
+    h += '<tr><td class="metric">'+s.title+'<small>'+s.unit+'</small></td>';
+    IDS.forEach(id=>{
+      const cur = get(last,id,s.k), pv = get(prev,id,s.k), wv = wk?get(wk,id,s.k):null;
+      const cd = delta(cur,pv), wd = delta(cur,wv);
+      h += '<td><div class="big num">'+fmt(cur===null?null:cur/s.sc, s.dp)+'</div>'
+        +  '<div class="chg"><span class="lbl">日</span>' + chgText(cur, pv, s.dp, s.sc) + '</div>'
+        +  '<div class="chg"><span class="lbl">周</span>' + chgText(cur, wv, s.dp, s.sc) + '</div></td>';
+    });
+    h += "</tr>";
+  });
+  h += "</tbody>";
+  document.getElementById("snapTable").innerHTML = h;
+}
+
+/* ---------- 渲染：累计 ---------- */
+function renderCum(){
+  const lastD = ROWS[ROWS.length-1].date, ym = monthOf(lastD), day = +lastD.slice(8,10);
+  const prevYm = ymShift(ym,-1), prevLast = prevYm + "-" + String(day).padStart(2,"0");
+  const y = lastD.slice(0,4), prevY = (Number(y)-1)+"";
+
+  const inRange = (rows, f) => rows.filter(f);
+  const rowsOfMonth = m => inRange(ROWS, r=>monthOf(r.date)===m);
+  const curM = rowsOfMonth(ym);
+  const prevM = inRange(rowsOfMonth(prevYm), r=>r.date <= prevLast);
+  const curY = inRange(ROWS, r=>r.date.slice(0,4)===y);
+  const prevYr = inRange(ROWS, r=>r.date<=prevY+"-12-31" && r.date.slice(0,4)===prevY);
+
+  let h = "<thead><tr><th>企业</th>"
+    + '<th class="co-head">'+ym+' 累计出栏<small class="muted"> 万头</small></th><th class="co-head">'+ym+' 均价<small class="muted"> 元/公斤</small></th>'
+    + '<th class="co-head">出栏环比<small class="muted"> 万头 / 较上月同期</small></th><th class="co-head">均价环比<small class="muted"> 较上月同期</small></th>'
+    + '<th class="co-head">年内累计出栏<small class="muted"> 万头</small></th><th class="co-head">年内均价<small class="muted"> 元/公斤</small></th>'
+    + "</tr></thead><tbody>";
+
+  CO.forEach(c=>{
+    const a = agg(curM, c.id), b = agg(prevM, c.id), ya = agg(curY, c.id);
+    const hasYr = prevYr.length > 0;
+    h += '<tr><td><span class="co-dot" style="background:'+c.color+'"></span>'+c.name+'</td>'
+      + '<td class="num">'+fmt(a.volume===null?null:a.volume/10000,1)+' <span class="muted">×'+a.n+'日</span></td>'
+      + '<td class="num">'+fmt(a.price,2)+'</td>'
+      + '<td>'+chgText(a.volume, b.volume, 1, 10000)+'</td>'
+      + '<td>'+chgText(a.price, b.price, 2)+'</td>'
+      + '<td class="num">'+fmt(ya.volume===null?null:ya.volume/10000,1)+'</td>'
+      + '<td class="num">'+fmt(ya.price,2)+'</td>'
+      + '</tr>';
+  });
+  h += "</tbody>";
+  document.getElementById("cumTable").innerHTML = h;
+}
+
+/* ---------- 渲染：走势图 ---------- */
+const NS = "http://www.w3.org/2000/svg";
+function svgEl(tag, at){ const e=document.createElementNS(NS,tag); for(const k in at) e.setAttribute(k,at[k]); return e; }
+
+function visibleRows(){
+  return state.range > 0 ? ROWS.slice(-state.range) : ROWS;
+}
+
+function renderChart(){
+  const rows = visibleRows(), m = METRIC[state.metric];
+  const svg = document.getElementById("chart"); svg.innerHTML = "";
+  const W=1240, H=330, P={t:16, r:16, b:32, l:62};
+  const iw = W-P.l-P.r, ih = H-P.t-P.b;
+  const vals = [];
+  rows.forEach(r=> IDS.forEach(id=>{ const v=get(r,id,state.metric); if(v!==null) vals.push(v/m.scale); }));
+  if(!vals.length) { svg.appendChild(svgEl("text",{x:W/2,y:H/2,"text-anchor":"middle",class:"axis"})); svg.lastChild.textContent="无数据"; return; }
+  let lo=Math.min.apply(null,vals), hi=Math.max.apply(null,vals);
+  if(hi-lo < 1e-9){ hi+=0.5; lo-=0.5; }
+  const pad=(hi-lo)*0.12; hi+=pad; lo-=pad;
+  const X = i => P.l + (rows.length===1 ? iw/2 : i*(iw/(rows.length-1)));
+  const Y = v => P.t + (1-(v-lo)/(hi-lo))*ih;
+
+  // y 网格
+  const TICKS=4;
+  for(let t=0;t<=TICKS;t++){
+    const v = lo + (hi-lo)*t/TICKS, yy = Y(v);
+    svg.appendChild(svgEl("line",{x1:P.l,x2:P.l+iw,y1:yy,y2:yy,class:"grid"+(t===0?" base":"")}));
+    const tx = svgEl("text",{x:P.l-9,y:yy+4,"text-anchor":"end",class:"axis"}); tx.textContent = fmt(v,m.dp); svg.appendChild(tx);
+  }
+  // x 标签
+  const step = Math.max(1, Math.ceil(rows.length/8));
+  rows.forEach((r,i)=>{
+    if(i % step !== 0 && i !== rows.length-1) return;
+    const t = svgEl("text",{x:X(i), y:P.t+ih+20, "text-anchor":"middle", class:"axis"});
+    t.textContent = r.date.slice(5); svg.appendChild(t);
+  });
+  // 折线
+  CO.forEach(c=>{
+    let d="", started=false;
+    rows.forEach((r,i)=>{ const v=get(r,c.id,state.metric); if(v===null){ started=false; return; }
+      d += (started? "L":"M") + X(i).toFixed(1) + " " + Y(v/m.scale).toFixed(1) + " "; started=true; });
+    if(d) svg.appendChild(svgEl("path",{d:d, fill:"none", stroke:c.color, "stroke-width":1.6, "stroke-linejoin":"round","stroke-linecap":"round"}));
+  });
+  // hover 层
+  const hover = svgEl("line",{x1:0,x2:0,y1:P.t,y2:P.t+ih,class:"tick-line",opacity:0});
+  svg.appendChild(hover);
+  const dots = CO.map(c=>{ const d=svgEl("circle",{r:3.2,fill:"#fff",stroke:c.color,"stroke-width":1.8,opacity:0}); svg.appendChild(d); return d; });
+
+  const tip = document.getElementById("tip");
+  svg.addEventListener("mousemove", ev=>{
+    const box = svg.getBoundingClientRect();
+    const rx = (ev.clientX-box.left)/box.width*W;
+    let idx = Math.round((rx-P.l)/(iw/Math.max(1,rows.length-1)));
+    idx = Math.max(0, Math.min(rows.length-1, idx));
+    const r = rows[idx];
+    hover.setAttribute("x1",X(idx)); hover.setAttribute("x2",X(idx)); hover.setAttribute("opacity",1);
+    let html = '<div class="t-date">'+r.date+'</div>';
+    CO.forEach((c,k)=>{
+      const v = get(r,c.id,state.metric);
+      if(v===null){ dots[k].setAttribute("opacity",0); html += '<div class="t-row"><span><i style="background:'+c.color+'"></i>'+c.name+'</span><b class="muted">—</b></div>'; return; }
+      dots[k].setAttribute("cx",X(idx)); dots[k].setAttribute("cy",Y(v/m.scale)); dots[k].setAttribute("opacity",1);
+      html += '<div class="t-row"><span><i style="background:'+c.color+'"></i>'+c.name+'</span><b>'+fmt(v/m.scale,m.dp)+'</b></div>';
+    });
+    tip.innerHTML = html; tip.style.display="block";
+    const hb = document.getElementById("chartWrap").getBoundingClientRect();
+    let lx = ev.clientX-hb.left+14, ly = ev.clientY-hb.top+10;
+    if(lx + tip.offsetWidth > hb.width-8) lx = ev.clientX-hb.left - tip.offsetWidth - 14;
+    tip.style.left = lx+"px"; tip.style.top = ly+"px";
+  });
+  svg.addEventListener("mouseleave", ()=>{ tip.style.display="none"; hover.setAttribute("opacity",0); dots.forEach(d=>d.setAttribute("opacity",0)); });
+}
+
+/* ---------- 渲染：明细表 ---------- */
+function renderDetail(){
+  const rows = visibleRows().slice().reverse(), m = METRIC[state.detail];
+  const idxOf = {}; ROWS.forEach((r,i)=> idxOf[r.date]=i);
+  let h = "<thead><tr><th>日期</th>";
+  CO.forEach(c=> h += '<th class="co-head"><span class="co-dot" style="background:'+c.color+'"></span>'+c.name+'</th><th class="co-head muted">环比</th>');
+  h += "</tr></thead><tbody>";
+  rows.forEach(r=>{
+    const i = idxOf[r.date];
+    const j = state.basis==="dod" ? i-1 : weekAgoIdx(i);
+    const base = j>=0 ? ROWS[j] : null;
+    h += '<tr><td class="num">'+r.date+'</td>';
+    IDS.forEach(id=>{
+      const cur = get(r,id,state.detail), bv = base?get(base,id,state.detail):null;
+      h += '<td class="num">'+fmt(cur===null?null:cur/m.scale,m.dp)+'</td><td class="num">';
+      if(cur===null||bv===null||!bv) h += '<span class="flat">—</span>';
+      else { const d=cur-bv; h += '<span class="'+cls(d)+'">'+arrow(d)+fmt(Math.abs(d)/m.scale,m.dp)+' ('+fmt(Math.abs(d/bv)*100,2)+'%)</span>'; }
+      h += '</td>';
+    });
+    h += "</tr>";
+  });
+  h += "</tbody>";
+  document.getElementById("detailTable").innerHTML = h;
+}
+
+/* ---------- 控件 ---------- */
+function segWire(id, key, after){
+  const box = document.getElementById(id);
+  box.addEventListener("click", e=>{
+    const b = e.target.closest("button"); if(!b) return;
+    box.querySelectorAll("button").forEach(x=>x.removeAttribute("aria-pressed"));
+    b.setAttribute("aria-pressed","true");
+    state[key] = (key==="range") ? Number(b.dataset.n) : (key==="basis" ? b.dataset.b : b.dataset.m);
+    renderAll();
+  });
+  const def = box.querySelector('button[data-n="30"],button[data-m="price"],button[data-b="dod"]');
+  if(def) def.setAttribute("aria-pressed","true");
+}
+
+function renderLegend(){
+  document.getElementById("legend").innerHTML = CO.map(c=>'<span><i style="background:'+c.color+'"></i>'+c.name+'</span>').join("");
+  document.getElementById("chartUnit").textContent = "单位：" + METRIC[state.metric].unit
+    + (state.metric==="volume" ? "（图中为万头）" : "");
+}
+
+function renderAll(){
+  renderSnap(); renderCum(); renderChart(); renderDetail(); renderLegend();
+}
+
+/* ---------- 初始化 ---------- */
+document.getElementById("stamp").textContent = D.meta.updated || ROWS[ROWS.length-1].date;
+document.getElementById("srcLabel").textContent = D.meta.source || "—";
+if(D.meta.isDemo){ document.getElementById("demoTag").hidden=false; document.getElementById("demoWarn").hidden=false; }
+segWire("rangeSeg","range");
+segWire("metricSeg","metric");
+segWire("detailSeg","detail");
+segWire("basisSeg","basis");
+renderAll();
+let rz; window.addEventListener("resize", ()=>{ clearTimeout(rz); rz=setTimeout(renderChart,120); });
+window.__ready = true;
+})();
+</script>
+</body>
+</html>
