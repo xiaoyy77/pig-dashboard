@@ -214,8 +214,14 @@ const WAN = 10000;
 
 /* ---------- 日期工具 ---------- */
 function shift(s, n){ const t=new Date(s+"T00:00:00Z"); t.setUTCDate(t.getUTCDate()+n); return t.toISOString().slice(0,10); }
-function dowMon(s){ return (new Date(s+"T00:00:00Z").getUTCDay()+6)%7; }   // 0=周一
-function weekStart(s){ return shift(s, -dowMon(s)); }
+/* 各家出栏周期起点不同（getUTCDay: 0=周日 1=周一 6=周六）
+   牧原：周日 → 周五（周六无数据）　温氏：周六 → 周五　德康：自然周（周一 → 周日） */
+const WEEK_START = {muyuan:0, wens:6, dekang:1};
+function weekStartFor(id, s){
+  const g = new Date(s + "T00:00:00Z").getUTCDay();
+  const st = (WEEK_START[id] === undefined) ? 1 : WEEK_START[id];
+  return shift(s, -((g - st + 7) % 7));
+}
 function prevMonthSameDay(s){
   let y=+s.slice(0,4), m=+s.slice(5,7), d=+s.slice(8,10);
   m-=1; if(m<1){ m=12; y--; }
@@ -277,7 +283,7 @@ function sumRange(id, from, to){
 function periodSum(id, anchor, kind, offset){
   let from, to;
   if(kind === "w"){
-    const ws = weekStart(anchor);
+    const ws = weekStartFor(id, anchor);
     const span = (new Date(anchor+"T00:00:00Z") - new Date(ws+"T00:00:00Z"))/86400000;
     from = shift(ws, offset*7); to = shift(from, span);
   } else {
@@ -316,7 +322,7 @@ function renderCompare(){
     chgLbl:"日"
   });
   rows.push({
-    label:"当周累计", unit:"周一至今", kind:"w",
+    label:"当周累计", unit:"牧原 周日→周五 · 温氏 周六→周五 · 德康 周一→周日", kind:"w",
     val:(id)=>{ const i=ii[id]; return i<0?null:periodSum(id, ROWS[i].date, "w", 0).sum; },
     chg:(id)=>{ const i=ii[id]; return i<0 ? null : perChg(id, ROWS[i].date, "w"); },
     chgLbl:"周"
