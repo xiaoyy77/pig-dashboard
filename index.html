@@ -465,11 +465,11 @@ function renderSplit(){
     document.getElementById("splitDate").textContent = DKD.date + "　13 个区域公司";
     const max = Math.max.apply(null, DKD.regions.map(r=>r.plan).concat([1]));
     h = '<table class="cmp"><thead><tr><th>区域公司</th><th>计划出栏（头）</th><th>实际订购（头）</th>'
-      + '<th>订购率</th><th>加权出栏价</th><th>加权均重</th><th style="width:110px">计划结构</th></tr></thead><tbody>';
+      + '<th>订购率<small style="display:block;font-weight:400;color:var(--muted)">订购/计划</small></th><th>加权出栏价</th><th>加权均重</th><th style="width:110px">计划结构</th></tr></thead><tbody>';
     DKD.regions.forEach(rg=>{
       h += '<tr><td>'+rg.name+'</td><td class="num">'+rg.plan.toLocaleString()+'</td>'
         +  '<td class="num">'+rg.ordered.toLocaleString()+'</td>'
-        +  '<td class="num">'+fmt(rg.orderRate*100,1)+'%</td>'
+        +  '<td class="num">'+fmt(rg.rateCalc*100,1)+'%</td>'
         +  '<td class="num">'+fmt(rg.price,2)+'</td>'
         +  '<td class="num">'+fmt(rg.weight,1)+'</td>'
         +  '<td>'+bar(rg.plan, max, c.color)+'</td></tr>';
@@ -491,7 +491,8 @@ function provOf(i, cid){
 function renderDk(){
   const t = DKD.total;
   document.getElementById("dkDate").textContent = DKD.date + "　" + t.nRegion + " 个区域公司 · " + t.nBatch + " 个出栏批次";
-  document.getElementById("dkNote").innerHTML = '<span class="muted">加权口径：按各批次计划出栏量加权 · 点击区域行展开养户级明细</span>';
+  const inSeq = ROWS.some(r => r.date === DKD.date && r.dekang);
+  document.getElementById("dkNote").textContent = (inSeq ? "" : "制表时点快照，未并入上方日度序列　·　") + "按批次计划出栏量加权　·　点击区域行展开养户级明细";
   const cards = [
     {k:"计划出栏", v:fmtWan(t.plan,2), u:"万头"},
     {k:"实际订购", v:fmtWan(t.ordered,2), u:"万头"},
@@ -503,14 +504,14 @@ function renderDk(){
     '<div class="card"><div class="k">'+c.k+'</div><div class="v">'+c.v+'<span class="u">'+c.u+'</span></div></div>').join("");
 
   const max = Math.max.apply(null, DKD.regions.map(r=>r.plan).concat([1]));
-  let h = '<table class="cmp"><thead><tr><th>区域公司</th><th>计划出栏</th><th>实际订购</th><th>订购率</th>'
+  let h = '<table class="cmp"><thead><tr><th>区域公司</th><th>计划出栏</th><th>实际订购</th><th>订购率<small style="display:block;font-weight:400;color:var(--muted)">订购/计划</small></th>'
         + '<th>加权出栏价</th><th>加权均重</th><th>批次</th><th>养户</th><th style="width:110px">计划结构</th></tr></thead><tbody>';
   DKD.regions.forEach((rg,gi)=>{
     h += '<tr class="regrow" data-r="'+gi+'">'
       +  '<td><span class="caret">▶</span>'+rg.name+'</td>'
       +  '<td class="num">'+rg.plan.toLocaleString()+'</td>'
       +  '<td class="num">'+rg.ordered.toLocaleString()+'</td>'
-      +  '<td class="num">'+fmt(rg.orderRate*100,1)+'%</td>'
+      +  '<td class="num">'+fmt(rg.rateCalc*100,1)+'%</td>'
       +  '<td class="num">'+fmt(rg.price,2)+'</td><td class="num">'+fmt(rg.weight,1)+'</td>'
       +  '<td class="num">'+rg.nBatch+'</td><td class="num">'+rg.nFarm+'</td>'
       +  '<td>'+bar(rg.plan, max, CMAP.dekang.color)+'</td></tr>';
