@@ -465,61 +465,109 @@ function metricLabel(id){
   return base + (id === "dekang" ? "订购量" : "出栏量");
 }
 
-/* 每家企业一张独立柱状图：一天一根柱，按自然日占位（缺数据的日子留空档），纵轴各自独立 */
+/* 每家企业一张独立图：一天一根柱/一个点，按自然日占位（缺数据留空档），纵轴各自独立。
+   德康额外给出加权出栏价与加权均重（折线，从自身区间取值以免被 0 压平）。 */
+const KIND = {
+  vol:   {type:"bar",  h:300, unit:"万头",    dp:2, sc:10000},
+  price: {type:"line", h:240, unit:"元/公斤", dp:2, sc:1},
+  weight:{type:"line", h:240, unit:"公斤/头", dp:1, sc:1}
+};
+function blocksFor(id){
+  return (id === "dekang" && state.company === "dekang") ? ["vol", "price", "weight"] : ["vol"];
+}
+function blockLabel(id, k){
+  if(k === "vol") return metricLabel(id);
+  return (k === "price" ? "加权出栏价" : "加权均重") + "（日度）";
+}
+function fieldOf(row, id, key){
+  const o = row[id]; if(!o) return null;
+  const v = o[key];
+  return (v === null || v === undefined || isNaN(v)) ? null : +v;
+}
+function valueOf(row, id, k){
+  if(k !== "vol") return fieldOf(row, id, k);
+  if(state.metric === "day") return vol(row, id);
+  return periodSum(id, row.date, state.metric === "week" ? "w" : "m", 0).sum || null;
+}
+
 function renderChart(){
   const host = document.getElementById("chartWrap");
   const ids = state.company === "all" ? IDS.slice() : [state.company];
-  host.innerHTML = ids.map(id =>
-      '<div class="cblock"><div class="ctitle">'
-    + '<span class="co-dot" style="background:' + CMAP[id].color + '"></span><b>' + CMAP[id].name + '</b>'
-    + '<span class="csub">' + metricLabel(id) + '　单位：万头</span>'
-    + '<span class="cstat" data-stat="' + id + '"></span></div>'
-    + '<div class="cwrap" data-wrap="' + id + '"><svg viewBox="0 0 1300 300" preserveAspectRatio="xMidYMid meet"></svg></div>'
-    + '</div>').join("") + '<div class="tip" id="tip"></div>';
-  ids.forEach(id => drawBars(id));
+  let html = "";
+  ids.forEach(id => blocksFor(id).forEach(k => {
+    const K = KIND[k];
+    html += '<div class="cblock"><div class="ctitle">'
+      + '<span class="co-dot" style="background:' + CMAP[id].color + '"></span><b>' + CMAP[id].name + '</b>'
+      + '<span class="csub">' + blockLabel(id, k) + '　单位：' + K.unit + '</span>'
+      + '<span class="cstat" data-stat="' + id + '-' + k + '"></span></div>'
+      + '<div class="cwrap" data-wrap="' + id + '-' + k + '">'
+      + '<svg viewBox="0 0 1300 ' + K.h + '" preserveAspectRatio="xMidYMid meet"></svg></div></div>';
+  }));
+  host.innerHTML = html + '<div class="tip" id="tip"></div>';
+  ids.forEach(id => blocksFor(id).forEach(k => drawChart(id, k)));
 }
 
-function drawBars(id){
-  const box = document.querySelector('.cwrap[data-wrap="' + id + '"]');
+function drawChart(id, k){
+  const box = document.querySelector('.cwrap[data-wrap="' + id + '-' + k + '"]');
   if(!box) return;
-  const svg = box.querySelector("svg");
-  const co = CMAP[id];
+  const svg = box.querySelector("svg"), co = CMAP[id], K = KIND[k];
   const rows = visible();
   if(!rows.length) return;
-
   const days = [];
   for(let d = rows[0].date; d <= rows[rows.length-1].date; d = shift(d, 1)) days.push(d);
   const vals = days.map(d => {
     const i = IDX[d];
     if(i === undefined) return null;
-    const v = seriesValue(ROWS[i], id);
-    return (v === null || v === 0) ? null : v / WAN;
+    const v = valueOf(ROWS[i], id, k);
+    return v === null ? null : v / K.sc;
   });
   const real = vals.filter(v => v !== null);
   if(!real.length) return;
 
-  const W = 1300, H = 300, P = {t:14, r:16, b:28, l:64};
+  const W = 1300, H = K.h, P = {t:14, r:16, b:28, l:66};
   const iw = W - P.l - P.r, ih = H - P.t - P.b;
-  const yMax = Math.max.apply(null, real) * 1.12;
-  const slot = iw / days.length;
-  const bw = Math.max(1.5, slot * 0.68);
+  let lo, hi;
+  if(K.type === "bar"){ lo = 0; hi = Math.max.apply(null, real) * 1.12; }
+  else {
+    lo = Math.min.apply(null, real); hi = Math.max.apply(null, real);
+    if(hi - lo < 1e-9){ hi = lo + 1; lo = lo - 1; }
+    const pad = (hi - lo) * 0.25; hi += pad; lo -= pad;
+  }
+  const slot = iw / days.length, bw = Math.max(1.5, slot * 0.68);
   const X = j => P.l + j * slot;
-  const Y = v => P.t + (1 - v / yMax) * ih;
+  const Y = v => P.t + (1 - (v - lo) / (hi - lo)) * ih;
 
   for(let t = 0; t <= 4; t++){
-    const v = yMax * t / 4, yy = Y(v);
+    const v = lo + (hi - lo) * t / 4, yy = Y(v);
     svg.appendChild(svgEl("line", {x1:P.l, x2:P.l+iw, y1:yy, y2:yy, class:"grid" + (t === 0 ? " base" : "")}));
-    const tx = svgEl("text", {x:P.l-9, y:yy+4, "text-anchor":"end", class:"axis"});
-    tx.textContent = v.toFixed(1); svg.appendChild(tx);
+    const tx = svgEl("text", {x:P.l-10, y:yy+4, "text-anchor":"end", class:"axis"});
+    tx.textContent = v.toFixed(K.dp); svg.appendChild(tx);
   }
-  days.forEach((d, j) => {
-    const v = vals[j];
-    if(v === null) return;
-    const y = Y(v);
-    svg.appendChild(svgEl("rect", {
-      x:(X(j) + (slot - bw)/2).toFixed(1), y:y.toFixed(1), width:bw.toFixed(1),
-      height:Math.max(1, P.t + ih - y).toFixed(1), fill:co.color, opacity:0.85, rx:1}));
-  });
+
+  if(K.type === "bar"){
+    days.forEach((d, j) => {
+      const v = vals[j]; if(v === null) return;
+      const y = Y(v);
+      svg.appendChild(svgEl("rect", {x:(X(j) + (slot - bw)/2).toFixed(1), y:y.toFixed(1), width:bw.toFixed(1),
+        height:Math.max(1, P.t + ih - y).toFixed(1), fill:co.color, opacity:0.85, rx:1}));
+    });
+  } else {
+    let path = "", started = false;
+    days.forEach((d, j) => {
+      const v = vals[j];
+      if(v === null){ started = false; return; }
+      path += (started ? "L" : "M") + (X(j) + slot/2).toFixed(1) + " " + Y(v).toFixed(1) + " ";
+      started = true;
+    });
+    if(real.length > 1 && path)
+      svg.appendChild(svgEl("path", {d:path, fill:"none", stroke:co.color, "stroke-width":1.8,
+        "stroke-linejoin":"round", "stroke-linecap":"round"}));
+    days.forEach((d, j) => {
+      const v = vals[j]; if(v === null) return;
+      svg.appendChild(svgEl("circle", {cx:(X(j)+slot/2).toFixed(1), cy:Y(v).toFixed(1), r:2.6, fill:co.color}));
+    });
+  }
+
   const step = Math.max(1, Math.ceil(days.length / 10));
   days.forEach((d, j) => {
     if(j % step !== 0 && j !== days.length - 1) return;
@@ -527,23 +575,22 @@ function drawBars(id){
     t.textContent = d.slice(5); svg.appendChild(t);
   });
 
-  const stat = document.querySelector('.cstat[data-stat="' + id + '"]');
+  const stat = document.querySelector('.cstat[data-stat="' + id + '-' + k + '"]');
   if(stat){
     const avg = real.reduce((a, b) => a + b, 0) / real.length;
-    stat.textContent = "均值 " + avg.toFixed(2) + "　最高 " + Math.max.apply(null, real).toFixed(2)
-      + "　最低 " + Math.min.apply(null, real).toFixed(2) + "　有效 " + real.length + " 天";
+    stat.textContent = "均值 " + avg.toFixed(K.dp) + "　最高 " + Math.max.apply(null, real).toFixed(K.dp)
+      + "　最低 " + Math.min.apply(null, real).toFixed(K.dp) + "　有效 " + real.length + " 天";
   }
 
-  const tip = document.getElementById("tip");
-  const host = document.getElementById("chartWrap");
+  const tip = document.getElementById("tip"), host = document.getElementById("chartWrap");
   days.forEach((d, j) => {
     const hit = svgEl("rect", {x:X(j).toFixed(1), y:P.t, width:slot.toFixed(1), height:ih, fill:"transparent"});
     hit.addEventListener("mouseenter", () => {
       const v = vals[j];
       tip.innerHTML = '<div class="t-date">' + d + '</div>'
         + '<div class="t-row"><span><i style="background:' + co.color + '"></i>' + co.name + '</span><b>'
-        + (v === null ? "—" : v.toFixed(2)) + '</b></div>'
-        + '<div class="t-note">' + metricLabel(id) + ' · 万头</div>';
+        + (v === null ? "—" : v.toFixed(K.dp)) + '</b></div>'
+        + '<div class="t-note">' + blockLabel(id, k) + ' · ' + K.unit + '</div>';
       tip.style.display = "block";
       const hb = host.getBoundingClientRect(), bb = box.getBoundingClientRect();
       let lx = (bb.left - hb.left) + (X(j) + slot/2) / W * bb.width + 12;
