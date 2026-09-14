@@ -75,8 +75,15 @@ table.sub td,table.sub th{padding:5px 13px}
 .card .k{font-size:11.5px;color:var(--muted);margin-bottom:3px}
 .card .v{font-size:21px;font-weight:600;font-family:var(--mono);letter-spacing:-.01em}
 .card .u{font-size:11px;color:var(--muted);margin-left:3px;font-family:var(--sans);font-weight:400}
-#chartWrap{position:relative;padding:8px 8px 4px}
-#chart{display:block;width:100%;height:auto}
+#chartWrap{position:relative}
+.cblock{border-bottom:1px solid var(--border)}
+.cblock:last-of-type{border-bottom:0}
+.ctitle{display:flex;align-items:baseline;gap:9px;padding:10px 16px 2px;font-size:12.5px}
+.ctitle b{font-size:13px}
+.csub{color:var(--muted);font-size:11.5px}
+.cstat{margin-left:auto;color:var(--muted);font-size:11.5px;font-family:var(--mono)}
+.cwrap{padding:0 8px 8px}
+.cwrap svg{display:block;width:100%;height:auto}
 .tip{position:absolute;pointer-events:none;background:rgba(20,22,26,.94);color:#fff;border-radius:var(--r);
   padding:8px 10px;font-size:12px;line-height:1.65;display:none;z-index:5;white-space:nowrap}
 .tip .t-date{font-weight:600;margin-bottom:3px}
@@ -127,15 +134,20 @@ table.sub td,table.sub th{padding:5px 13px}
   <section class="panel">
     <div class="panel-h">
       <h2>出栏量走势</h2>
+      <div class="seg" id="companySeg">
+        <button data-c="muyuan">牧原</button>
+        <button data-c="wens">温氏</button>
+        <button data-c="dekang">德康</button>
+        <button data-c="all">三家并列</button>
+      </div>
       <div class="seg" id="metricSeg">
         <button data-m="day">日度</button>
         <button data-m="week">当周累计</button>
         <button data-m="month">当月累计</button>
       </div>
-      <span class="hint" id="chartUnit"></span>
-      <div class="legend spacer" id="legend" style="display:flex;gap:14px;font-size:12px;color:var(--ink2)"></div>
+      <span class="hint spacer">柱高按各自纵轴，不与其它企业共轴</span>
     </div>
-    <div id="chartWrap"><svg id="chart" viewBox="0 0 1300 340" preserveAspectRatio="xMidYMid meet"></svg><div class="tip" id="tip"></div></div>
+    <div id="chartWrap"></div>
   </section>
 
   <!-- 3. 结构拆解 -->
@@ -190,7 +202,7 @@ const CO = D.companies, IDS = CO.map(c=>c.id), CMAP = {}; CO.forEach(c=>CMAP[c.i
 const ROWS = D.daily.slice().sort((a,b)=> a.date < b.date ? -1 : 1);
 const IDX = {}; ROWS.forEach((r,i)=> IDX[r.date]=i);
 const DKD = D.dkDetail;
-const state = {range:30, metric:"day", split:"muyuan", basis:"dod"};
+const state = {range:30, metric:"day", split:"muyuan", basis:"dod", company:"muyuan"};
 
 /* ---------- 取值：三家的“日出栏/订购量”，单位统一为头 ---------- */
 function vol(row, id){
@@ -350,70 +362,100 @@ function seriesValue(row, id){
   const kind = state.metric === "week" ? "w" : "m";
   return periodSum(id, row.date, kind, 0).sum || null;
 }
-function renderChart(){
-  const rows = visible(), svg = document.getElementById("chart");
-  svg.innerHTML = "";
-  const W=1300, H=340, P={t:16, r:18, b:34, l:66};
-  const iw=W-P.l-P.r, ih=H-P.t-P.b;
-  const vals=[];
-  rows.forEach(r=> IDS.forEach(id=>{ const v=seriesValue(r,id); if(v!==null && v!==0) vals.push(v/WAN); }));
-  if(!vals.length){ const t=svgEl("text",{x:W/2,y:H/2,"text-anchor":"middle",class:"axis"}); t.textContent="无数据"; svg.appendChild(t); return; }
-  let lo=Math.min.apply(null,vals), hi=Math.max.apply(null,vals);
-  if(hi-lo<1e-9){ hi+=0.5; lo-=0.5; }
-  const pad=(hi-lo)*0.12; hi+=pad; lo=Math.max(0, lo-pad);
-  const X = i => P.l + (rows.length===1 ? iw/2 : i*(iw/(rows.length-1)));
-  const Y = v => P.t + (1-(v-lo)/(hi-lo))*ih;
+function metricLabel(id){
+  const base = state.metric === "day" ? "日度" : (state.metric === "week" ? "当周累计" : "当月累计");
+  return base + (id === "dekang" ? "订购量" : "出栏量");
+}
 
-  const T=4;
-  for(let t=0;t<=T;t++){
-    const v = lo+(hi-lo)*t/T, yy=Y(v);
-    svg.appendChild(svgEl("line",{x1:P.l,x2:P.l+iw,y1:yy,y2:yy,class:"grid"+(t===0?" base":"")}));
-    const tx=svgEl("text",{x:P.l-9,y:yy+4,"text-anchor":"end",class:"axis"}); tx.textContent=v.toFixed(1); svg.appendChild(tx);
+/* 每家企业一张独立柱状图：一天一根柱，按自然日占位（缺数据的日子留空档），纵轴各自独立 */
+function renderChart(){
+  const host = document.getElementById("chartWrap");
+  const ids = state.company === "all" ? IDS.slice() : [state.company];
+  host.innerHTML = ids.map(id =>
+      '<div class="cblock"><div class="ctitle">'
+    + '<span class="co-dot" style="background:' + CMAP[id].color + '"></span><b>' + CMAP[id].name + '</b>'
+    + '<span class="csub">' + metricLabel(id) + '　单位：万头</span>'
+    + '<span class="cstat" data-stat="' + id + '"></span></div>'
+    + '<div class="cwrap" data-wrap="' + id + '"><svg viewBox="0 0 1300 300" preserveAspectRatio="xMidYMid meet"></svg></div>'
+    + '</div>').join("") + '<div class="tip" id="tip"></div>';
+  ids.forEach(id => drawBars(id));
+}
+
+function drawBars(id){
+  const box = document.querySelector('.cwrap[data-wrap="' + id + '"]');
+  if(!box) return;
+  const svg = box.querySelector("svg");
+  const co = CMAP[id];
+  const rows = visible();
+  if(!rows.length) return;
+
+  const days = [];
+  for(let d = rows[0].date; d <= rows[rows.length-1].date; d = shift(d, 1)) days.push(d);
+  const vals = days.map(d => {
+    const i = IDX[d];
+    if(i === undefined) return null;
+    const v = seriesValue(ROWS[i], id);
+    return (v === null || v === 0) ? null : v / WAN;
+  });
+  const real = vals.filter(v => v !== null);
+  if(!real.length) return;
+
+  const W = 1300, H = 300, P = {t:14, r:16, b:28, l:64};
+  const iw = W - P.l - P.r, ih = H - P.t - P.b;
+  const yMax = Math.max.apply(null, real) * 1.12;
+  const slot = iw / days.length;
+  const bw = Math.max(1.5, slot * 0.68);
+  const X = j => P.l + j * slot;
+  const Y = v => P.t + (1 - v / yMax) * ih;
+
+  for(let t = 0; t <= 4; t++){
+    const v = yMax * t / 4, yy = Y(v);
+    svg.appendChild(svgEl("line", {x1:P.l, x2:P.l+iw, y1:yy, y2:yy, class:"grid" + (t === 0 ? " base" : "")}));
+    const tx = svgEl("text", {x:P.l-9, y:yy+4, "text-anchor":"end", class:"axis"});
+    tx.textContent = v.toFixed(1); svg.appendChild(tx);
   }
-  const step = Math.max(1, Math.ceil(rows.length/9));
-  rows.forEach((r,i)=>{
-    if(i%step!==0 && i!==rows.length-1) return;
-    const t=svgEl("text",{x:X(i),y:P.t+ih+20,"text-anchor":"middle",class:"axis"});
-    t.textContent=r.date.slice(5); svg.appendChild(t);
+  days.forEach((d, j) => {
+    const v = vals[j];
+    if(v === null) return;
+    const y = Y(v);
+    svg.appendChild(svgEl("rect", {
+      x:(X(j) + (slot - bw)/2).toFixed(1), y:y.toFixed(1), width:bw.toFixed(1),
+      height:Math.max(1, P.t + ih - y).toFixed(1), fill:co.color, opacity:0.85, rx:1}));
   });
-  CO.forEach(c=>{
-    let d="", started=false;
-    rows.forEach((r,i)=>{
-      const v=seriesValue(r,c.id);
-      if(v===null || v===0){ started=false; return; }
-      d += (started?"L":"M") + X(i).toFixed(1) + " " + Y(v/WAN).toFixed(1) + " ";
-      started=true;
-    });
-    if(d) svg.appendChild(svgEl("path",{d:d,fill:"none",stroke:c.color,"stroke-width":1.7,"stroke-linejoin":"round","stroke-linecap":"round"}));
+  const step = Math.max(1, Math.ceil(days.length / 10));
+  days.forEach((d, j) => {
+    if(j % step !== 0 && j !== days.length - 1) return;
+    const t = svgEl("text", {x:(X(j) + slot/2).toFixed(1), y:P.t + ih + 18, "text-anchor":"middle", class:"axis"});
+    t.textContent = d.slice(5); svg.appendChild(t);
   });
-  const hover = svgEl("line",{x1:0,x2:0,y1:P.t,y2:P.t+ih,class:"tick-line",opacity:0}); svg.appendChild(hover);
-  const dots = CO.map(c=>{ const d=svgEl("circle",{r:3.2,fill:"#fff",stroke:c.color,"stroke-width":1.8,opacity:0}); svg.appendChild(d); return d; });
+
+  const stat = document.querySelector('.cstat[data-stat="' + id + '"]');
+  if(stat){
+    const avg = real.reduce((a, b) => a + b, 0) / real.length;
+    stat.textContent = "均值 " + avg.toFixed(2) + "　最高 " + Math.max.apply(null, real).toFixed(2)
+      + "　最低 " + Math.min.apply(null, real).toFixed(2) + "　有效 " + real.length + " 天";
+  }
 
   const tip = document.getElementById("tip");
-  svg.addEventListener("mousemove", ev=>{
-    const box=svg.getBoundingClientRect();
-    const rx=(ev.clientX-box.left)/box.width*W;
-    let idx=Math.round((rx-P.l)/(iw/Math.max(1,rows.length-1)));
-    idx=Math.max(0,Math.min(rows.length-1,idx));
-    const r=rows[idx];
-    hover.setAttribute("x1",X(idx)); hover.setAttribute("x2",X(idx)); hover.setAttribute("opacity",1);
-    let html='<div class="t-date">'+r.date+"</div>";
-    CO.forEach((c,k)=>{
-      const v=seriesValue(r,c.id);
-      if(v===null || v===0){ dots[k].setAttribute("opacity",0);
-        html+='<div class="t-row"><span><i style="background:'+c.color+'"></i>'+c.name+'</span><b class="muted">—</b></div>'; return; }
-      dots[k].setAttribute("cx",X(idx)); dots[k].setAttribute("cy",Y(v/WAN)); dots[k].setAttribute("opacity",1);
-      html+='<div class="t-row"><span><i style="background:'+c.color+'"></i>'+c.name+'</span><b>'+fmtWan(v,2)+'</b></div>';
+  const host = document.getElementById("chartWrap");
+  days.forEach((d, j) => {
+    const hit = svgEl("rect", {x:X(j).toFixed(1), y:P.t, width:slot.toFixed(1), height:ih, fill:"transparent"});
+    hit.addEventListener("mouseenter", () => {
+      const v = vals[j];
+      tip.innerHTML = '<div class="t-date">' + d + '</div>'
+        + '<div class="t-row"><span><i style="background:' + co.color + '"></i>' + co.name + '</span><b>'
+        + (v === null ? "—" : v.toFixed(2)) + '</b></div>'
+        + '<div class="t-note">' + metricLabel(id) + ' · 万头</div>';
+      tip.style.display = "block";
+      const hb = host.getBoundingClientRect(), bb = box.getBoundingClientRect();
+      let lx = (bb.left - hb.left) + (X(j) + slot/2) / W * bb.width + 12;
+      const ly = (bb.top - hb.top) + 24;
+      if(lx + tip.offsetWidth > hb.width - 8) lx -= tip.offsetWidth + 26;
+      tip.style.left = lx + "px"; tip.style.top = ly + "px";
     });
-    if(r.dekang && r.dekang.fromDetail) html+='<div class="t-note">德康为当日分区域明细合计</div>';
-    tip.innerHTML=html; tip.style.display="block";
-    const hb=document.getElementById("chartWrap").getBoundingClientRect();
-    let lx=ev.clientX-hb.left+14, ly=ev.clientY-hb.top+10;
-    if(lx+tip.offsetWidth>hb.width-8) lx=ev.clientX-hb.left-tip.offsetWidth-14;
-    tip.style.left=lx+"px"; tip.style.top=ly+"px";
+    svg.appendChild(hit);
   });
-  svg.addEventListener("mouseleave", ()=>{ tip.style.display="none"; hover.setAttribute("opacity",0); dots.forEach(d=>d.setAttribute("opacity",0)); });
-  document.getElementById("legend").innerHTML = CO.map(c=>'<span><i style="display:inline-block;width:14px;height:2px;background:'+c.color+';margin-right:6px;vertical-align:3px"></i>'+c.name+'</span>').join("");
+  svg.addEventListener("mouseleave", () => { tip.style.display = "none"; });
 }
 
 /* ---------- 区块3：结构拆解 ---------- */
@@ -579,17 +621,12 @@ function wire(id, key, attr){
   const def = box.querySelector("button");
   if(def) def.setAttribute("aria-pressed","true");
 }
-function renderAll(){ renderCompare(); renderChart(); renderChartUnit(); renderSplit(); renderDetail(); }
+function renderAll(){ renderCompare(); renderChart(); renderSplit(); renderDetail(); }
 
-function renderChartUnit(){
-  document.getElementById("chartUnit").textContent =
-    state.metric==="day" ? "单位：万头（德康为当日订购量）"
-    : (state.metric==="week" ? "单位：万头（周一至今累计，德康为订购量）"
-    : "单位：万头（月初至今累计，德康为订购量）");
-}
 
 renderAsof(); renderDk();
-wire("rangeSeg","range","n"); wire("metricSeg","metric","m"); wire("splitSeg","split","c"); wire("basisSeg","basis","b");
+wire("rangeSeg","range","n"); wire("metricSeg","metric","m"); wire("companySeg","company","c");
+wire("splitSeg","split","c"); wire("basisSeg","basis","b");
 renderAll();
 let rz; window.addEventListener("resize", ()=>{ clearTimeout(rz); rz=setTimeout(renderChart,120); });
 window.__ready = true;
